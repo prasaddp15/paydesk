@@ -76,19 +76,36 @@ type GatewayRequest = Request & {
 };
 
 const app: Express = express();
-const port = process.env.PORT || 5000;
+const port = Number(process.env.PORT || 5000);
+const isProduction = process.env.NODE_ENV === 'production';
 const sessions = new Map<string, SessionUser>();
+
+const requiredProductionEnv = ['DB_HOST', 'DB_USER', 'DB_PASSWORD', 'DB_NAME', 'ENCRYPTION_KEY'];
+const missingProductionEnv = isProduction ? requiredProductionEnv.filter((key) => !process.env[key]) : [];
+
+if (missingProductionEnv.length > 0) {
+  console.error(`Missing required production environment variables: ${missingProductionEnv.join(', ')}`);
+  process.exit(1);
+}
 
 app.use(cors());
 app.use('/api/webhooks/razorpay/:clientId', express.raw({ type: 'application/json' }));
 app.use(express.json());
 
-const pool = mysql.createPool({
+const databaseConfig = {
   host: process.env.DB_HOST || 'localhost',
   port: Number(process.env.DB_PORT || 3306),
   user: process.env.DB_USER || 'root',
   password: process.env.DB_PASSWORD || '',
   database: process.env.DB_NAME || 'app_db',
+};
+
+console.log(
+  `Database target: ${databaseConfig.user}@${databaseConfig.host}:${databaseConfig.port}/${databaseConfig.database}`,
+);
+
+const pool = mysql.createPool({
+  ...databaseConfig,
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
@@ -2207,8 +2224,8 @@ app.post('/api/webhooks/razorpay/:clientId', async (req: Request, res: Response)
 
 ensureRuntimeSchema()
   .then(() => {
-    app.listen(port, () => {
-      console.log(`Server running on http://localhost:${port}`);
+    app.listen(port, '0.0.0.0', () => {
+      console.log(`Server running on 0.0.0.0:${port}`);
     });
   })
   .catch((error) => {
