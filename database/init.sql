@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS clients (
   razorpay_key_secret VARCHAR(255),
   razorpay_webhook_secret VARCHAR(255),
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  updated_at TIMESTAMP NULL DEFAULT NULL
 );
 
 CREATE TABLE IF NOT EXISTS admins (
@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS admins (
   password_hash VARCHAR(255) NOT NULL,
   status ENUM('active', 'paused') NOT NULL DEFAULT 'active',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  updated_at TIMESTAMP NULL DEFAULT NULL
 );
 
 CREATE TABLE IF NOT EXISTS users (
@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash VARCHAR(255) NOT NULL,
   role ENUM('main_admin', 'client_admin') NOT NULL DEFAULT 'client_admin',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NULL DEFAULT NULL,
   FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
 );
 
@@ -78,8 +78,8 @@ CREATE TABLE IF NOT EXISTS customers (
   total_transactions INT NOT NULL DEFAULT 0,
   captured_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
   last_payment_at TIMESTAMP NULL,
-  created_at TIMESTAMP NOT NULL DEFAULT '1970-01-01 00:00:01',
-  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NULL DEFAULT NULL,
   UNIQUE KEY uniq_customers_client_key (client_id, customer_key),
   FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
 );
@@ -97,9 +97,9 @@ CREATE TABLE IF NOT EXISTS transactions (
   customer_name VARCHAR(255),
   customer_email VARCHAR(255),
   customer_phone VARCHAR(40),
-  notes JSON,
+  notes TEXT,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NULL DEFAULT NULL,
   FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
   FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL
 );
@@ -138,8 +138,8 @@ CREATE TABLE IF NOT EXISTS api_logs (
   endpoint VARCHAR(255) NOT NULL,
   status_code INT NOT NULL,
   message VARCHAR(255),
-  request_payload JSON,
-  response_payload JSON,
+  request_payload TEXT,
+  response_payload TEXT,
   request_id VARCHAR(80) NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE SET NULL,
@@ -151,7 +151,7 @@ CREATE TABLE IF NOT EXISTS razorpay_events (
   client_id INT NOT NULL,
   event_id VARCHAR(255) UNIQUE,
   event_name VARCHAR(255) NOT NULL,
-  payload JSON NOT NULL,
+  payload TEXT NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
 );
@@ -167,7 +167,7 @@ CREATE TABLE IF NOT EXISTS support_tickets (
   message TEXT NOT NULL,
   admin_reply TEXT,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NULL DEFAULT NULL,
   resolved_at TIMESTAMP NULL,
   FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
   FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE SET NULL
@@ -193,10 +193,10 @@ ALTER TABLE transactions ADD COLUMN IF NOT EXISTS receipt VARCHAR(255);
 ALTER TABLE transactions MODIFY COLUMN status ENUM('created', 'captured', 'authorized', 'failed', 'refunded') NOT NULL DEFAULT 'captured';
 ALTER TABLE transactions ADD COLUMN IF NOT EXISTS customer_name VARCHAR(255);
 ALTER TABLE transactions ADD COLUMN IF NOT EXISTS customer_phone VARCHAR(40);
-ALTER TABLE transactions ADD COLUMN IF NOT EXISTS notes JSON;
-ALTER TABLE transactions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;
-ALTER TABLE api_logs ADD COLUMN IF NOT EXISTS request_payload JSON;
-ALTER TABLE api_logs ADD COLUMN IF NOT EXISTS response_payload JSON;
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS notes TEXT;
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NULL DEFAULT NULL;
+ALTER TABLE api_logs ADD COLUMN IF NOT EXISTS request_payload TEXT;
+ALTER TABLE api_logs ADD COLUMN IF NOT EXISTS response_payload TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_users_client_id ON users(client_id);
 CREATE INDEX IF NOT EXISTS idx_admins_status ON admins(status);

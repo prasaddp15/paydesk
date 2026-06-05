@@ -227,7 +227,8 @@ const upsertCustomer = async (
       id = LAST_INSERT_ID(id),
       name = COALESCE(VALUES(name), name),
       email = COALESCE(VALUES(email), email),
-      phone = COALESCE(VALUES(phone), phone)`,
+      phone = COALESCE(VALUES(phone), phone),
+      updated_at = CURRENT_TIMESTAMP`,
     [clientId, customerKey, name, email, phone],
   );
 
@@ -252,7 +253,8 @@ const refreshCustomerStats = async (customerId: number | null) => {
       ),
       last_payment_at = (
         SELECT MAX(t.created_at) FROM transactions t WHERE t.customer_id = c.id
-      )
+      ),
+      updated_at = CURRENT_TIMESTAMP
      WHERE c.id = ?`,
     [customerId],
   );
@@ -507,6 +509,57 @@ const ensureRuntimeSchema = async () => {
   );
 
   await pool.query(
+    `CREATE TABLE IF NOT EXISTS clients (
+      id INT PRIMARY KEY AUTO_INCREMENT,
+      company_name VARCHAR(255) NOT NULL,
+      contact_name VARCHAR(255) NOT NULL,
+      email VARCHAR(255) UNIQUE NOT NULL,
+      phone_number VARCHAR(30),
+      business_website VARCHAR(255),
+      pan_number VARCHAR(20),
+      aadhaar_number VARCHAR(20),
+      gst_number VARCHAR(30),
+      business_category VARCHAR(120),
+      business_address TEXT,
+      city VARCHAR(120),
+      state VARCHAR(120),
+      pincode VARCHAR(20),
+      status ENUM('active', 'paused', 'pending') NOT NULL DEFAULT 'pending',
+      razorpay_key_id VARCHAR(255),
+      razorpay_key_secret VARCHAR(255),
+      razorpay_webhook_secret VARCHAR(255),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NULL DEFAULT NULL
+    )`,
+  );
+
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS admins (
+      id INT PRIMARY KEY AUTO_INCREMENT,
+      name VARCHAR(255) NOT NULL,
+      email VARCHAR(255) UNIQUE NOT NULL,
+      password_hash VARCHAR(255) NOT NULL,
+      status ENUM('active', 'paused') NOT NULL DEFAULT 'active',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NULL DEFAULT NULL
+    )`,
+  );
+
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS users (
+      id INT PRIMARY KEY AUTO_INCREMENT,
+      client_id INT NULL,
+      name VARCHAR(255) NOT NULL,
+      email VARCHAR(255) UNIQUE NOT NULL,
+      password_hash VARCHAR(255) NOT NULL,
+      role ENUM('main_admin', 'client_admin') NOT NULL DEFAULT 'client_admin',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NULL DEFAULT NULL,
+      FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
+    )`,
+  );
+
+  await pool.query(
     `CREATE TABLE IF NOT EXISTS customers (
       id INT PRIMARY KEY AUTO_INCREMENT,
       client_id INT NOT NULL,
@@ -518,8 +571,91 @@ const ensureRuntimeSchema = async () => {
       captured_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
       last_payment_at TIMESTAMP NULL,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NULL DEFAULT NULL,
       UNIQUE KEY uniq_customers_client_key (client_id, customer_key),
+      FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
+    )`,
+  );
+
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS transactions (
+      id INT PRIMARY KEY AUTO_INCREMENT,
+      client_id INT NOT NULL,
+      customer_id INT NULL,
+      razorpay_order_id VARCHAR(255) UNIQUE,
+      razorpay_payment_id VARCHAR(255) UNIQUE,
+      razorpay_refund_id VARCHAR(255),
+      receipt VARCHAR(255),
+      amount DECIMAL(12,2) NOT NULL,
+      currency CHAR(3) NOT NULL DEFAULT 'INR',
+      status ENUM('created', 'captured', 'authorized', 'failed', 'refunded') NOT NULL DEFAULT 'captured',
+      customer_name VARCHAR(255),
+      customer_email VARCHAR(255),
+      customer_phone VARCHAR(40),
+      notes TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NULL DEFAULT NULL,
+      FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
+      FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL
+    )`,
+  );
+
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS client_api_keys (
+      id INT PRIMARY KEY AUTO_INCREMENT,
+      client_id INT NOT NULL,
+      name VARCHAR(120) NOT NULL DEFAULT 'Default API key',
+      api_key VARCHAR(255) UNIQUE NOT NULL,
+      api_secret_hash VARCHAR(255) NOT NULL,
+      api_secret_encrypted TEXT,
+      status ENUM('active', 'revoked') NOT NULL DEFAULT 'active',
+      last_used_at TIMESTAMP NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
+    )`,
+  );
+
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS api_key_requests (
+      id INT PRIMARY KEY AUTO_INCREMENT,
+      client_id INT NOT NULL,
+      name VARCHAR(120) NOT NULL,
+      environment_type VARCHAR(60) NOT NULL DEFAULT 'Production (Live)',
+      business_justification TEXT,
+      status ENUM('pending', 'approved', 'rejected') NOT NULL DEFAULT 'pending',
+      message VARCHAR(255),
+      reviewed_at TIMESTAMP NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
+    )`,
+  );
+
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS api_logs (
+      id INT PRIMARY KEY AUTO_INCREMENT,
+      client_id INT,
+      api_key_id INT,
+      method VARCHAR(12) NOT NULL,
+      endpoint VARCHAR(255) NOT NULL,
+      status_code INT NOT NULL,
+      message VARCHAR(255),
+      request_payload TEXT,
+      response_payload TEXT,
+      request_id VARCHAR(80) NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE SET NULL,
+      FOREIGN KEY (api_key_id) REFERENCES client_api_keys(id) ON DELETE SET NULL
+    )`,
+  );
+
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS razorpay_events (
+      id INT PRIMARY KEY AUTO_INCREMENT,
+      client_id INT NOT NULL,
+      event_id VARCHAR(255) UNIQUE,
+      event_name VARCHAR(255) NOT NULL,
+      payload TEXT NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
     )`,
   );
@@ -536,7 +672,7 @@ const ensureRuntimeSchema = async () => {
       message TEXT NOT NULL,
       admin_reply TEXT,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NULL DEFAULT NULL,
       resolved_at TIMESTAMP NULL,
       FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
       FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE SET NULL
@@ -591,11 +727,11 @@ const ensureRuntimeSchema = async () => {
   const existingApiLogColumns = new Set(apiLogColumns.map((row) => row.COLUMN_NAME));
 
   if (!existingApiLogColumns.has('request_payload')) {
-    await pool.query('ALTER TABLE api_logs ADD COLUMN request_payload JSON AFTER message');
+    await pool.query('ALTER TABLE api_logs ADD COLUMN request_payload TEXT AFTER message');
   }
 
   if (!existingApiLogColumns.has('response_payload')) {
-    await pool.query('ALTER TABLE api_logs ADD COLUMN response_payload JSON AFTER request_payload');
+    await pool.query('ALTER TABLE api_logs ADD COLUMN response_payload TEXT AFTER request_payload');
   }
 
   await pool.query(
@@ -630,7 +766,8 @@ const ensureRuntimeSchema = async () => {
      ON DUPLICATE KEY UPDATE
       name = COALESCE(VALUES(name), name),
       email = COALESCE(VALUES(email), email),
-      phone = COALESCE(VALUES(phone), phone)`,
+      phone = COALESCE(VALUES(phone), phone),
+      updated_at = CURRENT_TIMESTAMP`,
   );
 
   await pool.query(
@@ -660,7 +797,8 @@ const ensureRuntimeSchema = async () => {
       ),
       last_payment_at = (
         SELECT MAX(t.created_at) FROM transactions t WHERE t.customer_id = c.id
-      )`,
+      ),
+      updated_at = CURRENT_TIMESTAMP`,
   );
 };
 
@@ -890,7 +1028,7 @@ app.get('/api/admin/dashboard', requireAuth, requireRole('main_admin'), async (_
           cu.last_payment_at
          FROM customers cu
          JOIN clients c ON c.id = cu.client_id
-         ORDER BY cu.last_payment_at DESC, cu.updated_at DESC
+         ORDER BY cu.last_payment_at DESC, COALESCE(cu.updated_at, cu.created_at) DESC
          LIMIT 50`,
       ),
       pool.query<RowDataPacket[]>(
@@ -912,13 +1050,13 @@ app.get('/api/admin/dashboard', requireAuth, requireRole('main_admin'), async (_
       ),
       pool.query<RowDataPacket[]>(
         `SELECT t.id, t.client_id, t.subject, t.category, t.priority, t.status, t.message,
-          t.admin_reply, t.created_at, t.updated_at, t.resolved_at,
+          t.admin_reply, t.created_at, COALESCE(t.updated_at, t.created_at) AS updated_at, t.resolved_at,
           c.company_name, c.email,
           u.name AS created_by_name, u.email AS created_by_email
          FROM support_tickets t
          JOIN clients c ON c.id = t.client_id
          LEFT JOIN users u ON u.id = t.created_by_user_id
-         ORDER BY FIELD(t.status, 'open', 'in_progress', 'resolved', 'closed'), t.updated_at DESC
+         ORDER BY FIELD(t.status, 'open', 'in_progress', 'resolved', 'closed'), COALESCE(t.updated_at, t.created_at) DESC
          LIMIT 50`,
       ),
       pool.query<RowDataPacket[]>(
@@ -1137,6 +1275,7 @@ app.patch('/api/admin/support-tickets/:ticketId', requireAuth, requireRole('main
         status = COALESCE(?, status),
         priority = COALESCE(?, priority),
         admin_reply = COALESCE(?, admin_reply),
+        updated_at = CURRENT_TIMESTAMP,
         resolved_at = CASE
           WHEN ? IN ('resolved', 'closed') THEN COALESCE(resolved_at, CURRENT_TIMESTAMP)
           WHEN ? IN ('open', 'in_progress') THEN NULL
@@ -1467,7 +1606,7 @@ app.get('/api/client/:clientId/dashboard', requireAuth, requireClientAccess, asy
           last_payment_at
          FROM customers
          WHERE client_id = ?
-         ORDER BY last_payment_at DESC, updated_at DESC
+         ORDER BY last_payment_at DESC, COALESCE(updated_at, created_at) DESC
          LIMIT 50`,
         [clientId],
       ),
@@ -1495,10 +1634,10 @@ app.get('/api/client/:clientId/dashboard', requireAuth, requireClientAccess, asy
         [clientId],
       ),
       pool.query<RowDataPacket[]>(
-        `SELECT id, client_id, subject, category, priority, status, message, admin_reply, created_at, updated_at, resolved_at
+        `SELECT id, client_id, subject, category, priority, status, message, admin_reply, created_at, COALESCE(updated_at, created_at) AS updated_at, resolved_at
          FROM support_tickets
          WHERE client_id = ?
-         ORDER BY created_at DESC, updated_at DESC
+         ORDER BY COALESCE(updated_at, created_at) DESC, created_at DESC
          LIMIT 30`,
         [clientId],
       ),
@@ -1724,8 +1863,8 @@ app.post('/api/client/:clientId/support-tickets', requireAuth, requireClientAcce
 
   try {
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO support_tickets (client_id, created_by_user_id, subject, category, priority, message)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO support_tickets (client_id, created_by_user_id, subject, category, priority, message, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
       [clientId, req.authUser?.id || null, subject, category, priority, message],
     );
 
