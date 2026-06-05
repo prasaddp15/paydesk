@@ -395,6 +395,27 @@ const getPlatformRazorpayCredentials = async () => {
   };
 };
 
+const getTableColumns = async (tableName: string): Promise<Set<string>> => {
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT COLUMN_NAME
+     FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = ?`,
+    [tableName],
+  );
+
+  return new Set(rows.map((row) => row.COLUMN_NAME));
+};
+
+const addColumnIfMissing = async (tableName: string, columns: Set<string>, columnName: string, definition: string) => {
+  if (columns.has(columnName)) {
+    return;
+  }
+
+  await pool.query(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
+  columns.add(columnName);
+};
+
 const logApiCall = async (
   req: GatewayRequest,
   statusCode: number,
@@ -696,60 +717,47 @@ const ensureRuntimeSchema = async () => {
     )`,
   );
 
-  const [rows] = await pool.query<RowDataPacket[]>(
-    `SELECT COLUMN_NAME
-     FROM INFORMATION_SCHEMA.COLUMNS
-     WHERE TABLE_SCHEMA = DATABASE()
-      AND TABLE_NAME = 'transactions'
-      AND COLUMN_NAME IN ('customer_id', 'customer_name', 'customer_phone')`,
-  );
-  const existingColumns = new Set(rows.map((row) => row.COLUMN_NAME));
+  const clientApiKeyColumns = await getTableColumns('client_api_keys');
+  await addColumnIfMissing('client_api_keys', clientApiKeyColumns, 'name', "VARCHAR(120) NOT NULL DEFAULT 'Default API key'");
+  await addColumnIfMissing('client_api_keys', clientApiKeyColumns, 'api_secret_encrypted', 'TEXT');
+  await addColumnIfMissing('client_api_keys', clientApiKeyColumns, 'last_used_at', 'TIMESTAMP NULL');
 
-  if (!existingColumns.has('customer_id')) {
-    await pool.query('ALTER TABLE transactions ADD COLUMN customer_id INT NULL');
-  }
+  const customerColumns = await getTableColumns('customers');
+  await addColumnIfMissing('customers', customerColumns, 'customer_key', 'VARCHAR(255) NOT NULL');
+  await addColumnIfMissing('customers', customerColumns, 'total_transactions', 'INT NOT NULL DEFAULT 0');
+  await addColumnIfMissing('customers', customerColumns, 'captured_amount', 'DECIMAL(12,2) NOT NULL DEFAULT 0.00');
+  await addColumnIfMissing('customers', customerColumns, 'last_payment_at', 'TIMESTAMP NULL');
+  await addColumnIfMissing('customers', customerColumns, 'updated_at', 'TIMESTAMP NULL DEFAULT NULL');
 
-  if (!existingColumns.has('customer_name')) {
-    await pool.query('ALTER TABLE transactions ADD COLUMN customer_name VARCHAR(255)');
-  }
+  const transactionColumns = await getTableColumns('transactions');
+  await addColumnIfMissing('transactions', transactionColumns, 'customer_id', 'INT NULL');
+  await addColumnIfMissing('transactions', transactionColumns, 'razorpay_order_id', 'VARCHAR(255) UNIQUE');
+  await addColumnIfMissing('transactions', transactionColumns, 'razorpay_refund_id', 'VARCHAR(255)');
+  await addColumnIfMissing('transactions', transactionColumns, 'receipt', 'VARCHAR(255)');
+  await addColumnIfMissing('transactions', transactionColumns, 'customer_name', 'VARCHAR(255)');
+  await addColumnIfMissing('transactions', transactionColumns, 'customer_phone', 'VARCHAR(40)');
+  await addColumnIfMissing('transactions', transactionColumns, 'notes', 'TEXT');
+  await addColumnIfMissing('transactions', transactionColumns, 'updated_at', 'TIMESTAMP NULL DEFAULT NULL');
 
-  if (!existingColumns.has('customer_phone')) {
-    await pool.query('ALTER TABLE transactions ADD COLUMN customer_phone VARCHAR(40)');
-  }
+  const apiRequestColumns = await getTableColumns('api_key_requests');
+  await addColumnIfMissing('api_key_requests', apiRequestColumns, 'name', "VARCHAR(120) NOT NULL DEFAULT 'Default API key'");
+  await addColumnIfMissing('api_key_requests', apiRequestColumns, 'environment_type', "VARCHAR(60) NOT NULL DEFAULT 'Production (Live)'");
+  await addColumnIfMissing('api_key_requests', apiRequestColumns, 'business_justification', 'TEXT');
+  await addColumnIfMissing('api_key_requests', apiRequestColumns, 'reviewed_at', 'TIMESTAMP NULL');
 
-  const [apiRequestColumns] = await pool.query<RowDataPacket[]>(
-    `SELECT COLUMN_NAME
-     FROM INFORMATION_SCHEMA.COLUMNS
-     WHERE TABLE_SCHEMA = DATABASE()
-      AND TABLE_NAME = 'api_key_requests'
-      AND COLUMN_NAME IN ('environment_type', 'business_justification')`,
-  );
-  const existingApiRequestColumns = new Set(apiRequestColumns.map((row) => row.COLUMN_NAME));
+  const apiLogColumns = await getTableColumns('api_logs');
+  await addColumnIfMissing('api_logs', apiLogColumns, 'api_key_id', 'INT');
+  await addColumnIfMissing('api_logs', apiLogColumns, 'message', 'VARCHAR(255)');
+  await addColumnIfMissing('api_logs', apiLogColumns, 'request_payload', 'TEXT');
+  await addColumnIfMissing('api_logs', apiLogColumns, 'response_payload', 'TEXT');
+  await addColumnIfMissing('api_logs', apiLogColumns, 'request_id', 'VARCHAR(80) NOT NULL DEFAULT ""');
 
-  if (!existingApiRequestColumns.has('environment_type')) {
-    await pool.query("ALTER TABLE api_key_requests ADD COLUMN environment_type VARCHAR(60) NOT NULL DEFAULT 'Production (Live)' AFTER name");
-  }
-
-  if (!existingApiRequestColumns.has('business_justification')) {
-    await pool.query('ALTER TABLE api_key_requests ADD COLUMN business_justification TEXT AFTER environment_type');
-  }
-
-  const [apiLogColumns] = await pool.query<RowDataPacket[]>(
-    `SELECT COLUMN_NAME
-     FROM INFORMATION_SCHEMA.COLUMNS
-     WHERE TABLE_SCHEMA = DATABASE()
-      AND TABLE_NAME = 'api_logs'
-      AND COLUMN_NAME IN ('request_payload', 'response_payload')`,
-  );
-  const existingApiLogColumns = new Set(apiLogColumns.map((row) => row.COLUMN_NAME));
-
-  if (!existingApiLogColumns.has('request_payload')) {
-    await pool.query('ALTER TABLE api_logs ADD COLUMN request_payload TEXT AFTER message');
-  }
-
-  if (!existingApiLogColumns.has('response_payload')) {
-    await pool.query('ALTER TABLE api_logs ADD COLUMN response_payload TEXT AFTER request_payload');
-  }
+  const supportTicketColumns = await getTableColumns('support_tickets');
+  await addColumnIfMissing('support_tickets', supportTicketColumns, 'created_by_user_id', 'INT NULL');
+  await addColumnIfMissing('support_tickets', supportTicketColumns, 'category', "VARCHAR(120) NOT NULL DEFAULT 'General support'");
+  await addColumnIfMissing('support_tickets', supportTicketColumns, 'admin_reply', 'TEXT');
+  await addColumnIfMissing('support_tickets', supportTicketColumns, 'updated_at', 'TIMESTAMP NULL DEFAULT NULL');
+  await addColumnIfMissing('support_tickets', supportTicketColumns, 'resolved_at', 'TIMESTAMP NULL');
 
   await pool.query(
     `UPDATE api_key_requests
