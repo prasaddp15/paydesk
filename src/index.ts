@@ -76,7 +76,9 @@ type GatewayRequest = Request & {
 };
 
 const app: Express = express();
-const port = Number(process.env.PORT || 5000);
+const isRender = Boolean(process.env.RENDER || process.env.RENDER_SERVICE_ID);
+const configuredPort = Number(process.env.PORT || 5000);
+const port = isRender && configuredPort === 3000 ? 10000 : configuredPort;
 const isProduction = process.env.NODE_ENV === 'production';
 const sessions = new Map<string, SessionUser>();
 
