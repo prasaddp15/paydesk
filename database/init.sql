@@ -87,9 +87,9 @@ CREATE TABLE IF NOT EXISTS transactions (
   id INT PRIMARY KEY AUTO_INCREMENT,
   client_id INT NOT NULL,
   customer_id INT NULL,
-  razorpay_order_id VARCHAR(255) UNIQUE,
-  razorpay_payment_id VARCHAR(255) UNIQUE,
-  razorpay_refund_id VARCHAR(255),
+  razorpay_order_id VARCHAR(191) UNIQUE,
+  razorpay_payment_id VARCHAR(191) UNIQUE,
+  razorpay_refund_id VARCHAR(191),
   receipt VARCHAR(255),
   amount DECIMAL(12,2) NOT NULL,
   currency CHAR(3) NOT NULL DEFAULT 'INR',
@@ -108,7 +108,7 @@ CREATE TABLE IF NOT EXISTS client_api_keys (
   id INT PRIMARY KEY AUTO_INCREMENT,
   client_id INT NOT NULL,
   name VARCHAR(120) NOT NULL DEFAULT 'Default API key',
-  api_key VARCHAR(255) UNIQUE NOT NULL,
+  api_key VARCHAR(191) UNIQUE NOT NULL,
   api_secret_hash VARCHAR(255) NOT NULL,
   api_secret_encrypted TEXT,
   status ENUM('active', 'revoked') NOT NULL DEFAULT 'active',
@@ -149,7 +149,7 @@ CREATE TABLE IF NOT EXISTS api_logs (
 CREATE TABLE IF NOT EXISTS razorpay_events (
   id INT PRIMARY KEY AUTO_INCREMENT,
   client_id INT NOT NULL,
-  event_id VARCHAR(255) UNIQUE,
+  event_id VARCHAR(191) UNIQUE,
   event_name VARCHAR(255) NOT NULL,
   payload TEXT NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -186,9 +186,9 @@ ALTER TABLE clients ADD COLUMN IF NOT EXISTS state VARCHAR(120);
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS pincode VARCHAR(20);
 ALTER TABLE client_api_keys ADD COLUMN IF NOT EXISTS api_secret_encrypted TEXT;
 ALTER TABLE transactions ADD COLUMN IF NOT EXISTS customer_id INT NULL;
-ALTER TABLE transactions ADD COLUMN IF NOT EXISTS razorpay_order_id VARCHAR(255) UNIQUE;
-ALTER TABLE transactions MODIFY COLUMN razorpay_payment_id VARCHAR(255) NULL;
-ALTER TABLE transactions ADD COLUMN IF NOT EXISTS razorpay_refund_id VARCHAR(255);
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS razorpay_order_id VARCHAR(191) UNIQUE;
+ALTER TABLE transactions MODIFY COLUMN razorpay_payment_id VARCHAR(191) NULL;
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS razorpay_refund_id VARCHAR(191);
 ALTER TABLE transactions ADD COLUMN IF NOT EXISTS receipt VARCHAR(255);
 ALTER TABLE transactions MODIFY COLUMN status ENUM('created', 'captured', 'authorized', 'failed', 'refunded') NOT NULL DEFAULT 'captured';
 ALTER TABLE transactions ADD COLUMN IF NOT EXISTS customer_name VARCHAR(255);
